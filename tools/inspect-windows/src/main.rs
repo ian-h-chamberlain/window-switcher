@@ -25,18 +25,18 @@ struct WindowInfo {
     is_visible: bool,
     cloak_type: u32,
     is_iconic: bool,
-    is_topmost: bool,
+    is_hidden_style: bool,
 }
 
 impl WindowInfo {
     pub fn stringify(&self) -> String {
         let size = format!("{}x{}", self.size.0, self.size.1);
         format!(
-            "visible:{}cloak:{}iconic:{}topmost:{} {:>10} {:>10}:{} {}:{}",
+            "visible:{}cloak:{} iconic:{}stylehide:{} {:>10} {:>10}:{} {}:{}",
             pretty_bool(self.is_visible),
             pretty_cloak(self.cloak_type),
             pretty_bool(self.is_iconic),
-            pretty_bool(self.is_topmost),
+            pretty_bool(self.is_hidden_style),
             size,
             self.hwnd.0 as isize,
             self.title,
@@ -55,7 +55,7 @@ fn collect_windows_info() -> anyhow::Result<Vec<WindowInfo>> {
         let title = get_window_title(hwnd);
         let cloak_type = get_window_cloak_type(hwnd);
         let is_iconic = is_iconic_window(hwnd);
-        let is_topmost = is_topmost_window(hwnd);
+        let is_hidden_style = is_hidden_style_window(hwnd);
         let is_visible = is_visible_window(hwnd);
         let (width, height) = get_window_size(hwnd);
         let owner_hwnd: HWND = unsafe { GetWindow(hwnd, GW_OWNER) }.unwrap_or_default();
@@ -73,7 +73,7 @@ fn collect_windows_info() -> anyhow::Result<Vec<WindowInfo>> {
             is_visible,
             cloak_type,
             is_iconic,
-            is_topmost,
+            is_hidden_style,
         };
         output.push(window_info);
     }

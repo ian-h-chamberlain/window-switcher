@@ -2,6 +2,9 @@ use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 use std::{ffi::c_void, mem::size_of, path::PathBuf};
 use windows::core::PWSTR;
+use windows::Win32::UI::WindowsAndMessaging::{
+    WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
+};
 use windows::Win32::{
     Foundation::{BOOL, HWND, LPARAM, MAX_PATH, POINT, RECT},
     Graphics::{
@@ -16,15 +19,11 @@ use windows::Win32::{
             PROCESS_VM_READ,
         },
     },
-    UI::{
-        Controls::STATE_SYSTEM_INVISIBLE,
-        WindowsAndMessaging::{
-            EnumWindows, GetCursorPos, GetForegroundWindow, GetTitleBarInfo, GetWindow,
-            GetWindowLongPtrW, GetWindowPlacement, GetWindowTextW, GetWindowThreadProcessId,
-            IsIconic, IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE,
-            GWL_USERDATA, GW_OWNER, SWP_NOZORDER, SW_RESTORE, TITLEBARINFO, WINDOWPLACEMENT,
-            WS_EX_TOPMOST,
-        },
+    UI::WindowsAndMessaging::{
+        EnumWindows, GetCursorPos, GetForegroundWindow, GetWindow, GetWindowLongPtrW,
+        GetWindowPlacement, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+        SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_USERDATA, GW_OWNER,
+        SWP_NOZORDER, SW_RESTORE, WINDOWPLACEMENT, WS_EX_TOPMOST,
     },
 };
 
@@ -34,22 +33,24 @@ pub fn is_iconic_window(hwnd: HWND) -> bool {
 
 pub fn is_visible_window(hwnd: HWND) -> bool {
     let ret = unsafe { IsWindowVisible(hwnd) };
-    if !ret.as_bool() {
-        return false;
-    }
-
-    // Some "visible" windows are cloaked with `DWM_CLOAKED_SHELL` but always have
-    // this invisible flag set, so this filters out those unusual cases:
-    let mut title_info = TITLEBARINFO::default();
-    title_info.cbSize = std::mem::size_of_val(&title_info) as u32;
-    let _ = unsafe { GetTitleBarInfo(hwnd, &mut title_info) };
-
-    title_info.rgstate[0] & STATE_SYSTEM_INVISIBLE.0 == 0
+    ret.as_bool()
 }
 
-pub fn is_topmost_window(hwnd: HWND) -> bool {
+pub fn is_hidden_style_window(hwnd: HWND) -> bool {
     let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
-    ex_style & WS_EX_TOPMOST.0 != 0
+    // Per MS docs: <https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles>
+    //
+    // WS_EX_TOOLWINDOW: A tool window does not appear in the taskbar or in the dialog
+    //      that appears when the user presses ALT+TAB.
+    // WS_EX_NOACTIVATE: The window should not be activated through programmatic
+    //      access or via keyboard navigation by accessible technology.
+    // WS_EX_NOREDIRECTIONBITMAP: The window does not render to a redirection surface.
+    //      This is for windows that do not have visible content or that use mechanisms
+    //      other than surfaces to provide their visual.
+    //
+    // I am not sure if WS_EX_TOPMOST is really needed here, although most people probably
+    // don't use alt+tab when they are trying to switch to a topmost window...
+    ex_style & (WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_NOREDIRECTIONBITMAP.0) != 0
 }
 
 pub fn get_window_cloak_type(hwnd: HWND) -> u32 {
@@ -232,7 +233,7 @@ pub fn list_windows(
     for hwnd in hwnds.iter().cloned() {
         let mut valid = is_visible_window(hwnd)
             && !is_cloaked_window(hwnd, only_current_desktop)
-            && !is_topmost_window(hwnd)
+            && !is_hidden_style_window(hwnd)
             && !is_small_window(hwnd);
         if valid && ignore_minimal && is_iconic_window(hwnd) {
             valid = false;
